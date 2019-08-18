@@ -2,21 +2,32 @@
 title: "Airport-activity"
 author: "Christopher Eshleman"
 date: "8/18/2019"
-output: pdf_document
+output:
+  word_document: default
+  pdf_document: default
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include=FALSE, message=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+options(warn=-1) # Turn warnings off. R gives too many warnings and they drive me bonkers. 
 ```
 
-# Airport activity: 
-## Building a quick profile of daily this and that. 
 
-##### (Code chunk shortcut: Command+Option+I) 
 
-Lemme create a palette. 
-Clear my working space, load some useful packages, and set my working drive. 
-```{r}
+# Airport activity:
+## Taking a quick snapshot of daily comings and goings.
+
+A number of departments collaborated this spring to evaluate plans for a runway reconstruction at Newark Airport. The question at focus was whether it'd be cheaper, over the life of the investment (around four decades), to build with asphalt, concrete or a designed hybrid. 
+
+One step of the evaluation involved an analysis of the expected impact to users. (By users we meant airlines and the traveling public, who we need to consider in slightly different ways.) The runway is one of two major runways and will need to be shut down for months, which will force activity for part or all (depending on how the project is designed) of a given day's activity onto the second major runway. (There's also a third, smaller runway but we're omitting it from the analysis to keep things simple and generalizable.) 
+
+We ran a basic analysis to inform the analysis, knowing we could return and build something more prescriptive if the alternatives were close enough in expected costs and impacts to merit real surgery. 
+
+A basic but critical step is to summarize activity, by time of day, for a typical day. We used R and a few handfuls of daily activity data from the Aviation's activity database. 
+
+First, create a palette. Clear the working space, load some useful packages, and set the working drive. 
+
+```{r include=FALSE}
 cat("\014") # clear the console
 rm(list=ls())
 dev.off() 
@@ -32,10 +43,10 @@ library(ggplot2)
 setwd("~/Dropbox/Work and research/Airport-activity/aviation-activity") 
 ```
 
-Colleagues in the Aviation Department drummed up data on weekday activity for a few random weekdays and weekends across a couple of typical years (2015 and 2016) for activity at the airport I'm looking at. 
+Colleagues in the Aviation Department drummed up data for a handful of typical weekdays and weekends across a couple of typical years (2015 and 2016) at the airport. 
 
 The weekday data: 
-```{r}
+```{r include=FALSE}
 list.files() 
 a1 = read.csv("./EWR_FD_150914_150916.csv", skip = 7)
 b1 = read.csv("./EWR_FD_160914_160916.csv", skip = 7) 
@@ -46,7 +57,7 @@ ab1$taxiway.used.to.enter.exit.runway=NULL
 ab1$daytype = "weekday" 
 rm(a1,b1) 
 ```
-Locked and loaded. 
+Loaded. 
 
 The weekend data: 
 ```{r}
@@ -59,7 +70,8 @@ ab$daytype = "weekend"
 rm(a,b) 
 ```
 
-A little messy, so rename variables and then consolidate. 
+It looks like the variables were named by hand or the terminology changed a little from one year to the next, so I'll rename variables before I consolidate the data.  
+
 ```{r}
 names(ab1) = names(ab) 
 ab = rbind(ab1,ab) 
@@ -67,15 +79,18 @@ rm(ab1)
 ```
 
 
+
 ## Preparation. 
 
-The airport tracks all kind of activity. But I'm interested explicitly in arrivals and departures. 
+The airport categorizes activity within a few buckets but we're explicitly interested in arrivals and departures.
+
 ```{r}
 table(ab$operation) 
 ab = subset(ab, ab$operation=="Arrival" | ab$operation == "Departure") 
 ```
 
-The underlying .csvs and the imports didn't recognize time for what it was. (Times and dates usually require a little extra attention.) 
+R doesn't usually recognize time and day variables for what they are. (Times and dates require a little extra attention in all statistical software.) 
+
 ```{r}
 ab$day.time = strptime(ab$event.time, "%m/%d/%y %H:%M", tz = "EST5EDT") 
 ab$date = format(as.POSIXct(ab$day.time,format='%m/%d/%Y %H:%M:%S'),format='%m/%d/%Y')
@@ -84,19 +99,23 @@ ab$date = as.Date(ab$date, format="%m/%d/%Y")
 ab$weekday = weekdays(ab$date) 
 ```
 
-Specifically, I want to be able to treat time down to the minute, so I'll just create a time variable that lets me do it easily. 
+Specifically, I want to be able to treat time down to the minute, so I'll just create a time variable that lets me do it easily. I can convert things to seconds, minutes, et cetera. The airport's peak hours are everything but 11pm-6am. (There are 86400 seconds in a day, 60 minutes x 60 minutes x 24 hours.)
+
 ```{r}
 ab$time = as.POSIXct(as.numeric(as.POSIXct(ab$day.time)) %% 86400, origin = "2000-01-01") 
-ab$time2 = as.numeric(as.POSIXct(ab$day.time)) %% 86400  # 60*60*24
+ab$time2 = as.numeric(as.POSIXct(ab$day.time)) %% 86400  
 benchpoints = c("2001-01-01 05:30:00", "2001-01-01 06:30:00", "2001-01-01 9:30:00", "2001-01-01 16:30:00", "2001-01-01 19:30:00", "2001-01-01 23:00:00") 
 benchpoints2 = as.numeric(as.POSIXct(benchpoints)) %% 86400 
-
-# Effective hours are everything but 11pm-6am. 86400 seconds in a day. 
-ab$timecat = ifelse(ab$time2>=82800 | ab$time2<=21600,"Night","SixAMtoElevenPM") #18000
+ab$timecat = ifelse(ab$time2>=82800 | ab$time2<=21600,"Night","SixAMtoElevenPM")
 ab = droplevels(ab) #Quick cleanup to trim unused data levels and 
 ```
 
-OK, the analysis is going to consider expected delays by time of day. There are some rule-of-thumb level windows of time that the airport uses as categories for high-level analysis. I'll borrow them and shape the data into tables. I'll treat 6 AM to 11 PM as peak and the remaining hours as "night".
+OK, the analysis is going to consider expected delays by time of day. We did that delay calculation separately (using the same data but for a year when simiilar construction occurred). 
+
+(Come to think of it, it would have been nice to replicate that work and bake it into this script.)
+
+Here, I aggregate the data for export and apply the delays in a spreadsheet consolidating the larger project, which is done by multiple people across teams with various analytical tools (largely Excel). 
+
 ```{r}
 table(ab$timecat) 
 table(ab$timecat,ab$operation) 
@@ -107,19 +126,23 @@ ab_wkdy = table(ab_wkdy$timecat,ab_wkdy$runway)
 ```
 
 
-So what DOES activity at the airport look like, anyway? 
+
+## Exploration and visualization. 
+
+So what DOES activity at the airport look like, anyway? Here are some basic density maps. 
+
 ```{r}
-# Basic density
 p = ggplot(ab, aes(x=time2)) + 
   geom_density()
 p
-# Add mean line
-p + geom_vline(aes(xintercept=mean(time2)),
-              color="blue", linetype="dashed", size=1)
+pp = p + geom_vline(aes(xintercept=mean(time2)),
+              color="blue", linetype="dashed", size=1) # Add mean line
+ggsave(p, file="./Raw_EWR.png", height=4,width=6) 
+ggsave(pp, file="./Raw_w_mean_EWR.png", height=4,width=6) 
 ```
 
-These will be the tables I use to apply expected delays, which we will estimate separately using the same data but during periods of similar delays in other years. 
-First I'm curious as to how different the airport's weekday profile is from the weekend: 
+The airport's weekday and weekend profiles aren't really that different, distributionally (below) or in raw volume: 
+
 ```{r}
 options(scipen=5)
 pq = ggplot(ab, aes(x=time2, fill=daytype)) +
@@ -127,11 +150,18 @@ pq = ggplot(ab, aes(x=time2, fill=daytype)) +
 pq 
 ggsave(pq, file="./Activity_EWR.png", height=4,width=6) 
 ```
-The distributions are fairly similar. 
 
-Saving the data: 
+I saved the plot separately in case I want to use it in presentations. 
+
+
+
+## Save and clean up. 
+
+Ultimately the tables are what I'll use to develop expected delays. Saving the data: 
 ```{r}
 write.csv(ab_wknd,"./Save weekend 20190818.csv") 
 write.csv(ab_wkdy,"./Save weekday 20190818.csv") 
 write.csv(ab,"./All runway data 20190818.csv")
+options(warn=0) # Turn warnings back on for next project. 
 ```
+
